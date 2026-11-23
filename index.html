@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>Auris Chat</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#4C2E1B;height:100%;overflow:hidden}
+body{font-family:'Outfit',sans-serif;color:#FFE9B2;display:flex;flex-direction:column}
+.header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,233,178,.08)}
+.header h1{font-size:18px;font-weight:500;color:#E5F9FF;letter-spacing:1px}
+.header .online{font-size:12px;color:#E5F9FF;opacity:.5}
+.messages{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:8px}
+.messages::-webkit-scrollbar{display:none}
+.msg{max-width:85%;padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.5;word-wrap:break-word}
+.msg .name{font-size:11px;font-weight:500;margin-bottom:3px;opacity:.6}
+.msg .time{font-size:10px;opacity:.3;margin-top:3px}
+.msg.me{align-self:flex-end;background:rgba(229,249,255,.12);border:1px solid rgba(229,249,255,.15)}
+.msg.me .name{color:#E5F9FF}
+.msg.other{align-self:flex-start;background:rgba(255,233,178,.08);border:1px solid rgba(255,233,178,.1)}
+.msg.other .name{color:#FFE9B2}
+.msg.ai{align-self:flex-start;background:rgba(229,249,255,.06);border:1px solid rgba(229,249,255,.1)}
+.msg.ai .name{color:#E5F9FF;font-style:italic}
+.msg.system{align-self:center;background:transparent;border:none;font-size:12px;opacity:.4;text-align:center;padding:4px}
+.compose{padding:12px 20px;display:flex;gap:8px;border-top:1px solid rgba(255,233,178,.08)}
+.compose input{flex:1;padding:11px 16px;border-radius:20px;border:1px solid rgba(229,249,255,.12);background:rgba(255,233,178,.04);color:#FFE9B2;font-size:14px;font-family:'Outfit',sans-serif;outline:none}
+.compose input::placeholder{color:rgba(255,233,178,.25)}
+.compose input:focus{border-color:rgba(229,249,255,.35)}
+.compose button{padding:11px 18px;border-radius:20px;border:none;background:linear-gradient(135deg,#E5F9FF,#b8ecf7);color:#4C2E1B;font-size:14px;font-weight:500;cursor:pointer;font-family:'Outfit',sans-serif}
+.compose button:active{transform:scale(.95)}
+.login-overlay{position:fixed;inset:0;background:#4C2E1B;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:10;padding:24px}
+.login-overlay h2{font-size:24px;font-weight:500;color:#E5F9FF;letter-spacing:1px}
+.login-overlay p{font-size:13px;opacity:.5;text-align:center}
+.login-overlay input{width:100%;max-width:300px;padding:12px 16px;border-radius:12px;border:1px solid rgba(255,233,178,.15);background:rgba(255,233,178,.06);color:#FFE9B2;font-size:15px;font-family:'Outfit',sans-serif;outline:none;text-align:center}
+.login-overlay input::placeholder{color:rgba(255,233,178,.3)}
+.login-overlay button{padding:12px 32px;border-radius:12px;border:none;background:linear-gradient(135deg,#E5F9FF,#b8ecf7);color:#4C2E1B;font-size:15px;font-weight:500;cursor:pointer;font-family:'Outfit',sans-serif}
+.login-overlay button:active{transform:scale(.95)}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="login-overlay" id="login">
+  <h2>Auris Chat</h2>
+  <p>Enter your name to join</p>
+  <input type="text" id="nameInput" placeholder="Your name" autofocus>
+  <button onclick="joinChat()">Join</button>
+</div>
+<div class="header">
+  <h1>Auris Chat</h1>
+  <span class="online" id="onlineCount">0 online</span>
+</div>
+<div class="messages" id="messages"></div>
+<div class="compose">
+  <input type="text" id="msgInput" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendMsg()">
+  <button onclick="sendMsg()">Send</button>
+</div>
+<script>
+var ws=null,myName='';
+var msgBox=document.getElementById('messages');
+
+function joinChat(){
+  var name=document.getElementById('nameInput').value.trim();
+  if(!name)return;
+  myName=name;
+  localStorage.setItem('auris_chat_name',name);
+  document.getElementById('login').classList.add('hidden');
+  connect();
+}
+
+// Auto-login if name saved
+var saved=localStorage.getItem('auris_chat_name');
+if(saved){myName=saved;document.getElementById('login').classList.add('hidden');connect();}
+
+function connect(){
+  var proto=location.protocol==='https:'?'wss:':'ws:';
+  ws=new WebSocket(proto+'//'+location.host);
+  ws.onmessage=function(e){
+    var data=JSON.parse(e.data);
+    if(data.type==='history'){data.messages.forEach(renderMsg);scrollDown();}
+    else if(data.type==='online'){document.getElementById('onlineCount').textContent=data.count+' online';}
+    else if(data.name){renderMsg(data);scrollDown();}
+  };
+  ws.onclose=function(){setTimeout(connect,2000);};
+}
+
+function sendMsg(){
+  var inp=document.getElementById('msgInput');
+  var text=inp.value.trim();
+  if(!text||!ws||ws.readyState!==1)return;
+  ws.send(JSON.stringify({type:'message',name:myName,text:text}));
+  inp.value='';
+}
+
+function renderMsg(msg){
+  var div=document.createElement('div');
+  var isMe=msg.name===myName;
+  var isAI=msg.source==='api';
+  div.className='msg '+(isMe?'me':(isAI?'ai':'other'));
+  var t=msg.at?new Date(msg.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+  div.innerHTML='<div class="name">'+esc(msg.name)+(isAI?' (AI)':'')+'</div>'+esc(msg.text)+'<div class="time">'+t+'</div>';
+  msgBox.appendChild(div);
+}
+
+function scrollDown(){msgBox.scrollTop=msgBox.scrollHeight;}
+function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+document.getElementById('nameInput').addEventListener('keydown',function(e){if(e.key==='Enter')joinChat();});
+</script>
+</body>
+</html>
